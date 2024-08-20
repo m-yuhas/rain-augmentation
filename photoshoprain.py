@@ -18,11 +18,14 @@ Measurement, vol. 72, pp. 1--11, Dec. 2022, doi: 10.1109/TIM.2022.3229717.
 
 from typing import Tuple
 import argparse
+import logging
 import os
 
+import coloredlogs
 import cv2
 import numpy
 
+LOGGER = logging.getLogger('Photoshop Rain')
 
 def get_rain_mask(size: Tuple[int, int],
                   amount: float = 25,
@@ -32,7 +35,6 @@ def get_rain_mask(size: Tuple[int, int],
                   black_point: int = 0,
                   white_point: int = 255) -> numpy.ndarray:
     mask = numpy.random.normal(loc=amount, scale=255 / 3, size=size)
-    print(mask)
     mask = cv2.resize(mask, (size[1] * drop_size + 2 * drop_length, size[0] * drop_size + 2 * drop_length))
     mask = mask[:size[0] + 2 * drop_length, :size[1] + 2 * drop_length]
     kernel = numpy.zeros((drop_length, drop_length))
@@ -89,18 +91,31 @@ if __name__ == '__main__':
         type=int,
         help='Decrease this to increase rain contrast'
     )
+    parser.add_argument(
+        '--output_path',
+        help='Location to write augmented files'
+    )
     args = parser.parse_args()
-    os.mkdir(args.dataset + f'_rain{args.amount}')
-    for f in os.listdir(args.dataset):
-        img = cv2.imread(os.path.join(args.dataset, f))
-        mask = get_rain_mask(
-            size=img.shape[0:2],
-            amount=args.amount,
-            angle=args.angle,
-            drop_length=args.drop_length,
-            drop_size=args.drop_size,
-            black_point=args.black_point,
-            white_point=args.white_point,
-        )
-        img = apply_mask(img, mask)
-        cv2.imwrite(os.path.join(args.dataset + f'_rain{args.amount}', f), img)
+    coloredlogs.install(level='INFO')
+    if not os.path.exists(args.output_path):
+        os.mkdir(args.output_path)
+    for root, dirs, files in os.walk(args.dataset, followlinks=True):
+        for dir in dirs:
+            if not os.path.exists(os.path.join(args.output_path, root.strip(args.dataset), dir)):
+                os.mkdir(os.path.join(args.output_path, root.strip(args.dataset), dir))
+        for f in files:
+            img = cv2.imread(os.path.join(root, f))
+            if img is None:
+                LOGGER.warn(f'File {f} skipped (not a valid image file).')
+                continue
+            mask = get_rain_mask(
+                size=img.shape[0:2],
+                amount=args.amount,
+                angle=args.angle,
+                drop_length=args.drop_length,
+                drop_size=args.drop_size,
+                black_point=args.black_point,
+                white_point=args.white_point,
+            )
+            img = apply_mask(img, mask)
+            cv2.imwrite(os.path.join(args.output_path, root.strip(args.dataset), f), img)
